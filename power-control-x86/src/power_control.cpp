@@ -52,7 +52,7 @@ static std::string sioS5Name;
 static std::string postCompleteName;
 static std::string powerButtonName;
 static std::string resetButtonName;
-// static std::string shutdownAckName;
+static std::string shutdownAckName;
 static std::string idButtonName;
 static std::string nmiButtonName;
 
@@ -68,7 +68,6 @@ static std::shared_ptr<sdbusplus::asio::dbus_interface> osIface;
 static std::shared_ptr<sdbusplus::asio::dbus_interface> idButtonIface;
 static std::shared_ptr<sdbusplus::asio::dbus_interface> nmiOutIface;
 static std::shared_ptr<sdbusplus::asio::dbus_interface> restartCauseIface;
-// static std::shared_ptr<sdbusplus::asio::dbus_interface> shutdownAckIface;
 
 static gpiod::line powerButtonMask;
 static gpiod::line resetButtonMask;
@@ -124,8 +123,8 @@ static gpiod::line powerButtonLine;
 static boost::asio::posix::stream_descriptor powerButtonEvent(io);
 static gpiod::line resetButtonLine;
 static boost::asio::posix::stream_descriptor resetButtonEvent(io);
-// static gpiod::line shutdownAckLine;
-// static boost::asio::posix::stream_descriptor shutdownAckEvent(io);
+static gpiod::line shutdownAckLine;
+static boost::asio::posix::stream_descriptor shutdownAckEvent(io);
 static gpiod::line nmiButtonLine;
 static boost::asio::posix::stream_descriptor nmiButtonEvent(io);
 static gpiod::line idButtonLine;
@@ -1864,20 +1863,14 @@ static void resetButtonHandler()
         });
 }
 
-#if 0
 // Shutdown ACK handler for Altra Processor
 static void shutdownAckHandler()
 {
     gpiod::line_event gpioLineEvent = shutdownAckLine.event_read();
 
-    if (gpioLineEvent.event_type == gpiod::line_event::FALLING_EDGE)
+    if (gpioLineEvent.event_type == gpiod::line_event::RISING_EDGE)
     {
          std::cerr << "Shutdown Acknowledge Received by BMC.\n";
-         resetButtonIface->set_property("ButtonPressed", true);
-    }
-    else if (gpioLineEvent.event_type == gpiod::line_event::RISING_EDGE)
-    {
-         std::cerr << "Shutdown Acknowledge reset.\n";
     }
 
     shutdownAckEvent.async_wait(
@@ -1892,7 +1885,6 @@ static void shutdownAckHandler()
             shutdownAckHandler();
         });
 }
-#endif
 
 #ifdef CHASSIS_SYSTEM_RESET
 static constexpr auto systemdBusname = "org.freedesktop.systemd1";
@@ -2177,10 +2169,10 @@ static int loadConfigValues()
         resetButtonName = data["RstButton"];
     }
 
-    // if (data.contains("ShdAck"))
-    // {
-    //     shutdownAckName = data["ShdAck"];
-    // }
+    if (data.contains("ShdAck"))
+    {
+        shutdownAckName = data["ShdAck"];
+    }
 
     if (data.contains("RstOut"))
     {
@@ -2325,11 +2317,9 @@ int main(int argc, char* argv[])
         std::cerr << "ResetButton not defined...\n";
     }
 
-    #if 0
     // Request SHUTDOWN_ACK GPIO events
     if (!power_control::shutdownAckName.empty())
     {
-        std::cerr << "ShutdownAcknowledge before...\n";
         if (!power_control::requestGPIOEvents(power_control::shutdownAckName,
                                               power_control::shutdownAckHandler,
                                               power_control::shutdownAckLine,
@@ -2342,8 +2332,6 @@ int main(int argc, char* argv[])
     {
         std::cerr << "ShutdownAcknowledge not defined...\n";
     }
-        std::cerr << "ShutdownAcknowledge after...\n";
-    #endif
 
     // Request NMI_BUTTON GPIO events
     if (!power_control::nmiButtonName.empty())
@@ -2670,28 +2658,6 @@ int main(int argc, char* argv[])
 
         power_control::resetButtonIface->initialize();
     }
-
-    #if 0
-    if (!power_control::shutdownAckName.empty())
-    {
-        // Shutdown Acknowledge Service
-        sdbusplus::asio::object_server shutdownAckServer =
-        sdbusplus::asio::object_server(power_control::conn);
-
-        // Shutdown Acknowledge Interface
-        power_control::shutdownAckIface = shutdownAckServer.add_interface(
-            "/xyz/openbmc_project/control/host0/shutdown_ack",
-            "xyz.openbmc_project.Control.Host.ShutdownAck");
-        
-        bool shutdownAckReceived =
-            power_control::resetButtonLine.get_value() == 0;
-        // Check Shutdown Acknowledge state
-        power_control::shutdownAckIface->register_property("AckReceived",
-                                                            shutdownAckReceived);
-            
-        power_control::shutdownAckIface->initialize();        
-    }
-    #endif
 
     if (power_control::nmiButtonLine)
     {
